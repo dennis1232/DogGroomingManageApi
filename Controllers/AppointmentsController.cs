@@ -34,7 +34,7 @@ namespace DogGroomingAPI.Controllers
                     return Unauthorized("Not authenticated");
 
                 var customerId = int.Parse(userId);
-                var appt = await _appointmentService.CreateAppointmentAsync(request, customerId);
+                var appt = await _appointmentService.CreateAppointment(request, customerId);
                 return Ok(new { appointment = appt });
             }
             catch (ValidationException ex)
@@ -54,7 +54,7 @@ namespace DogGroomingAPI.Controllers
         {
             try
             {
-                var times = await _appointmentService.GetAvailableTimesAsync(date, duration);
+                var times = await _appointmentService.GetAvailableTimes(date, duration);
                 return Ok(times);
             }
             catch (ValidationException ex)
@@ -75,18 +75,9 @@ namespace DogGroomingAPI.Controllers
         {
             try
             {
-                var appts = await _appointmentService.GetAppointmentsAsync(fromDate, toDate);
+                var appts = await _appointmentService.GetAppointments(fromDate, toDate);
 
-                return Ok(appts.Select(a => new
-                {
-                    a.Id,
-                    Time = a.AppointmentTime,
-                    Duration = a.GroomingDuration,
-                    a.PetSize,
-                    a.PetName,
-                    Customer = a.Customer.FullName,
-                    a.CreatedAt
-                }));
+                return Ok(appts);
             }
             catch (Exception ex)
             {
@@ -105,18 +96,9 @@ namespace DogGroomingAPI.Controllers
                     return Unauthorized();
 
                 var customerId = int.Parse(userId);
-                var myAppts = await _appointmentService.GetCustomerAppointmentsAsync(customerId);
+                var myAppts = await _appointmentService.GetCustomerAppointments(customerId);
 
-                return Ok(myAppts.Select(a => new
-                {
-                    a.Id,
-                    Time = a.AppointmentTime,
-                    Duration = a.GroomingDuration,
-                    a.PetSize,
-                    a.PetName,
-                    Customer = a.Customer.FullName,
-                    a.CreatedAt
-                }));
+                return Ok(myAppts);
             }
             catch (Exception ex)
             {
@@ -135,7 +117,7 @@ namespace DogGroomingAPI.Controllers
                     return Unauthorized();
 
                 var customerId = int.Parse(userId);
-                var cancelled = await _appointmentService.CancelAppointmentAsync(appointmentId, customerId);
+                var cancelled = await _appointmentService.CancelAppointment(appointmentId, customerId);
 
                 if (!cancelled)
                     return NotFound("Appointment not found");
@@ -168,7 +150,7 @@ namespace DogGroomingAPI.Controllers
                     return Unauthorized();
 
                 var customerId = int.Parse(userId);
-                var updated = await _appointmentService.UpdateAppointmentAsync(appointmentId, request, customerId);
+                var updated = await _appointmentService.UpdateAppointment(appointmentId, request, customerId);
                 return Ok(updated);
             }
             catch (KeyNotFoundException)
@@ -200,18 +182,8 @@ namespace DogGroomingAPI.Controllers
                     return Unauthorized();
 
                 var customerId = int.Parse(userId);
-                var appt = await _appointmentService.GetAppointmentByIdAsync(id, customerId);
-
-                return Ok(new
-                {
-                    appt.Id,
-                    Time = appt.AppointmentTime,
-                    Duration = appt.GroomingDuration,
-                    appt.PetSize,
-                    appt.PetName,
-                    Customer = appt.Customer.FullName,
-                    appt.CreatedAt
-                });
+                var appt = await _appointmentService.GetAppointmentById(id, customerId);
+                return Ok(appt);
             }
             catch (KeyNotFoundException)
             {

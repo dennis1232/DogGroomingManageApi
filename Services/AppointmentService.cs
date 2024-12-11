@@ -18,7 +18,7 @@ namespace DogGroomingAPI.Services
             _validationService = validationService;
         }
 
-        public async Task<IEnumerable<Appointment>> GetAppointmentsAsync(DateTime? fromDate, DateTime? toDate)
+        public async Task<IEnumerable<AppointmentDTO>> GetAppointments(DateTime? fromDate, DateTime? toDate)
         {
             var query = _context.Appointments.Include(a => a.Customer).AsQueryable();
 
@@ -27,19 +27,22 @@ namespace DogGroomingAPI.Services
             if (toDate.HasValue)
                 query = query.Where(a => a.AppointmentTime <= toDate.Value);
 
-            return await query.OrderBy(a => a.AppointmentTime).ToListAsync();
+            var appointments = await query.OrderBy(a => a.AppointmentTime).ToListAsync();
+            return appointments.Select(a => MapToDTO(a));
         }
 
-        public async Task<IEnumerable<Appointment>> GetCustomerAppointmentsAsync(int customerId)
+        public async Task<IEnumerable<AppointmentDTO>> GetCustomerAppointments(int customerId)
         {
-            return await _context.Appointments
+            var appointments = await _context.Appointments
                 .Include(a => a.Customer)
                 .Where(a => a.CustomerId == customerId)
                 .OrderBy(a => a.AppointmentTime)
                 .ToListAsync();
+
+            return appointments.Select(a => MapToDTO(a));
         }
 
-        public async Task<Appointment> GetAppointmentByIdAsync(int appointmentId, int customerId)
+        public async Task<Appointment> GetAppointmentById(int appointmentId, int customerId)
         {
             var appointment = await _context.Appointments
                 .Include(a => a.Customer)
@@ -54,7 +57,7 @@ namespace DogGroomingAPI.Services
             return appointment;
         }
 
-        public async Task<Appointment> CreateAppointmentAsync(CreateAppointmentRequest request, int customerId)
+        public async Task<Appointment> CreateAppointment(CreateAppointmentRequest request, int customerId)
         {
             if (!_validationService.IsValidDuration(request.Duration))
                 throw new ValidationException("Invalid appointment duration");
@@ -79,7 +82,7 @@ namespace DogGroomingAPI.Services
             return appointment;
         }
 
-        public async Task<bool> CancelAppointmentAsync(int appointmentId, int customerId)
+        public async Task<bool> CancelAppointment(int appointmentId, int customerId)
         {
             var appointment = await _context.Appointments.FindAsync(appointmentId);
 
@@ -94,9 +97,9 @@ namespace DogGroomingAPI.Services
             return true;
         }
 
-        public async Task<Appointment> UpdateAppointmentAsync(int appointmentId, UpdateAppointmentRequest request, int customerId)
+        public async Task<Appointment> UpdateAppointment(int appointmentId, UpdateAppointmentRequest request, int customerId)
         {
-            var appointment = await GetAppointmentByIdAsync(appointmentId, customerId);
+            var appointment = await GetAppointmentById(appointmentId, customerId);
 
             if (!_validationService.IsValidDuration(request.Duration))
                 throw new ValidationException("Invalid appointment duration");
@@ -116,7 +119,7 @@ namespace DogGroomingAPI.Services
             return appointment;
         }
 
-        public async Task<IEnumerable<DateTime>> GetAvailableTimesAsync(DateTime date, int duration)
+        public async Task<IEnumerable<DateTime>> GetAvailableTimes(DateTime date, int duration)
         {
             var businessStart = new DateTime(date.Year, date.Month, date.Day, BUSINESS_HOURS_START, 0, 0);
             var businessEnd = new DateTime(date.Year, date.Month, date.Day, BUSINESS_HOURS_END, 0, 0);
@@ -139,6 +142,21 @@ namespace DogGroomingAPI.Services
             }
 
             return availableTimes;
+        }
+
+        private AppointmentDTO MapToDTO(Appointment appointment)
+        {
+            return new AppointmentDTO
+            {
+                Id = appointment.Id,
+                CustomerId = appointment.CustomerId,
+                CustomerName = appointment.Customer?.FullName,
+                PetName = appointment.PetName,
+                PetSize = appointment.PetSize,
+                AppointmentTime = appointment.AppointmentTime,
+                GroomingDuration = appointment.GroomingDuration,
+                CreatedAt = appointment.CreatedAt
+            };
         }
 
         private const int BUSINESS_HOURS_START = 8;
