@@ -1,4 +1,5 @@
 using DogGroomingAPI.Models;
+using DogGroomingAPI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -57,6 +58,9 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod();
     });
 });
+
+
+builder.Services.AddScoped<IAppointmentService, AppointmentService>();
 
 var app = builder.Build();
 
