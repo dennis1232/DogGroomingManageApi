@@ -1,6 +1,3 @@
-I'll create a comprehensive summary for the .NET server project:
-
-````markdown:DogGroomingAPI/README.md
 # Dog Grooming Management API
 
 A .NET Core Web API for managing a dog grooming business, handling appointments, customer management, and authentication.
@@ -44,10 +41,11 @@ A .NET Core Web API for managing a dog grooming business, handling appointments,
 ## Project Setup
 
 1. Clone the repository:
+
 ```bash
 git clone [repository-url]
 cd DogGroomingAPI
-````
+```
 
 2. Database Setup:
    - Install SQL Server and SSMS
