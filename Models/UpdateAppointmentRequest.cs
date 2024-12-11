@@ -1,4 +1,4 @@
-namespace DogGroomingAPI.DTOs
+namespace DogGroomingAPI.Models
 {
     public class UpdateAppointmentRequest
     {

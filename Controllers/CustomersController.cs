@@ -8,6 +8,9 @@ using System.Text;
 using System.Security.Claims;
 using System.ComponentModel.DataAnnotations;
 using DogGroomingAPI.Models;
+using DogGroomingAPI.Services;
+using DogGroomingAPI.Exceptions;
+using Microsoft.Data.SqlClient;
 
 namespace DogGroomingAPI.Controllers
 {
@@ -15,128 +18,73 @@ namespace DogGroomingAPI.Controllers
     [Route("api/[controller]")]
     public class CustomersController : ControllerBase
     {
-        private readonly DogGroomingDbContext _context;
-        private readonly IConfiguration _configuration;
+        private readonly ICustomerService _customerService;
 
-        public CustomersController(DogGroomingDbContext context, IConfiguration configuration)
+        public CustomersController(ICustomerService customerService)
         {
-            _context = context;
-            _configuration = configuration;
+            _customerService = customerService;
         }
 
-        // Get all customers (admin-only access)
         [Authorize(Roles = "Admin")]
         [HttpGet]
         public async Task<IActionResult> GetCustomers()
         {
-            return Ok(await _context.Customers.ToListAsync());
+            var customers = await _customerService.GetAllCustomersAsync();
+            return Ok(customers);
         }
 
-        // Register a new customer
         [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterRequest registerRequest)
+        public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            if (_context.Customers.Any(c => c.Username == registerRequest.Username))
-                return BadRequest(new { message = "Username already exists" });
-
-            var customer = new Customer
+            try
             {
-                Username = registerRequest.Username,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerRequest.Password),
-                FullName = registerRequest.FullName
-            };
-
-            _context.Customers.Add(customer);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Registration successful" });
+                var customer = await _customerService.RegisterAsync(request);
+                return Ok(new { message = "Registration successful" });
+            }
+            catch (CustomerAlreadyExistsException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        // Login and generate JWT token
         [HttpPost("login")]
-        public IActionResult Login([FromBody] LoginRequest loginRequest)
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            var customer = _context.Customers.FirstOrDefault(c => c.Username == loginRequest.Username);
-
-            if (customer == null || !BCrypt.Net.BCrypt.Verify(loginRequest.Password, customer.PasswordHash))
-                return Unauthorized(new { message = "Invalid credentials" });
-
-            var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var tokenDescriptor = new SecurityTokenDescriptor
+            try
             {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim(ClaimTypes.NameIdentifier, customer.Id.ToString()),
-                    new Claim(ClaimTypes.Name, customer.Username),
-                    new Claim(ClaimTypes.Role, "Customer")
-                }),
-                Expires = DateTime.UtcNow.AddHours(1),
-                SigningCredentials = new SigningCredentials(
-                    new SymmetricSecurityKey(key),
-                    SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
-
-            return Ok(new { accessToken = tokenString, token = token });
+                var token = await _customerService.LoginAsync(request);
+                return Ok(new { accessToken = token });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
         }
 
         [Authorize]
         [HttpGet("me")]
-        public IActionResult GetCurrentUser()
+        public async Task<IActionResult> GetCurrentUser()
         {
-            var userId = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
-            var username = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
-
-            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(username))
-            {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
                 return Unauthorized(new { message = "User is not authenticated." });
-            }
-
-            var user = _context.Customers.FirstOrDefault(c => c.Id == int.Parse(userId));
-            if (user == null)
+            try
             {
-                return NotFound(new { message = "User not found." });
+                var customer = await _customerService.GetCustomerByIdAsync(int.Parse(userId));
+                return Ok(new
+                {
+                    id = customer.Id,
+                    username = customer.Username,
+                    fullName = customer.FullName
+                });
             }
-
-            return Ok(new
+            catch (NotFoundException ex)
             {
-                id = user.Id,
-                username = user.Username,
-                fullName = user.FullName
-            });
+                return NotFound(new { message = ex.Message });
+            }
         }
-
-    }
-
-    // DTO for login request
-    public class LoginRequest
-    {
-        [Required]
-        public string Username { get; set; }
-
-        [Required]
-        public string Password { get; set; }
-    }
-
-    // DTO for registration request
-    public class RegisterRequest
-    {
-        [Required]
-        [MinLength(5)]
-        public string Username { get; set; }
-
-        [Required]
-        [MinLength(8)]
-        public string Password { get; set; }
-
-        [Required]
-        [MaxLength(50)]
-        public string FullName { get; set; }
     }
 }

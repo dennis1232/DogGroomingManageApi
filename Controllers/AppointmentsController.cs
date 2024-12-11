@@ -2,9 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
-using DogGroomingAPI.DTOs;
-
-using DogGroomingAPI.Models; // Replace with your actual namespace
+using DogGroomingAPI.Models;
+using Microsoft.Data.SqlClient;
+using DogGroomingAPI.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace DogGroomingAPI.Controllers // Replace with your actual namespace
 {
@@ -13,10 +14,16 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
     public class AppointmentsController : ControllerBase
     {
         private readonly DogGroomingDbContext _context;
+        private const int MIN_APPOINTMENT_DURATION = 30;
+        private const int MAX_APPOINTMENT_DURATION = 90;
+        private const int BUSINESS_HOURS_START = 8;
+        private const int BUSINESS_HOURS_END = 18;
+        private readonly IAppointmentService _appointmentService;
 
-        public AppointmentsController(DogGroomingDbContext context)
+        public AppointmentsController(DogGroomingDbContext context, IAppointmentService appointmentService)
         {
             _context = context;
+            _appointmentService = appointmentService;
         }
 
         [HttpPost]
@@ -36,6 +43,12 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
             if (customer == null)
                 return NotFound(new { message = "Customer not found." });
 
+            if (request.AppointmentTime.Hour < BUSINESS_HOURS_START || request.AppointmentTime.Hour >= BUSINESS_HOURS_END)
+                return BadRequest(new { message = "Appointments must be scheduled between 8 AM and 6 PM" });
+
+            if (request.Duration < MIN_APPOINTMENT_DURATION || request.Duration > MAX_APPOINTMENT_DURATION)
+                return BadRequest(new { message = "Appointment duration must be between 30 and 180 minutes" });
+
             // Check for appointment conflicts
             var isConflict = await _context.Appointments.AnyAsync(a =>
                 a.AppointmentTime < request.AppointmentTime.AddMinutes(request.Duration) &&
@@ -45,7 +58,7 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
             if (isConflict)
                 return BadRequest(new { message = "Appointment conflicts with an existing appointment." });
 
-            // Create new appointment
+
             var appointment = new Appointment
             {
                 CustomerId = customer.Id,
@@ -66,6 +79,12 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
         [HttpGet("available-times")]
         public async Task<IActionResult> GetAvailableTimes(DateTime date, int duration)
         {
+            if (duration < MIN_APPOINTMENT_DURATION || duration > MAX_APPOINTMENT_DURATION)
+                return BadRequest(new { message = "Duration must be between 30 and 90 minutes" });
+
+            if (date.Date < DateTime.Today)
+                return BadRequest(new { message = "Cannot check availability for past dates" });
+
             var appointments = await _context.Appointments
                 .Where(a => a.AppointmentTime.Date == date.Date)
                 .OrderBy(a => a.AppointmentTime)
@@ -100,20 +119,7 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
         {
             try
             {
-                var query = _context.Appointments
-                    .Include(a => a.Customer)
-                    .AsQueryable();
-
-                // Apply date filters if provided
-                if (fromDate.HasValue)
-                    query = query.Where(a => a.AppointmentTime.Date >= fromDate.Value.Date);
-
-                if (toDate.HasValue)
-                    query = query.Where(a => a.AppointmentTime.Date <= toDate.Value.Date);
-
-                var appointments = await query
-                    .OrderBy(a => a.AppointmentTime)
-                    .ToListAsync();
+                var appointments = await _appointmentService.GetAppointmentsAsync(fromDate, toDate);
 
                 var result = appointments.Select(a => new
                 {
@@ -122,8 +128,8 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
                     a.GroomingDuration,
                     a.PetSize,
                     a.PetName,
-                    a.CreatedAt,
                     a.CustomerId,
+                    a.CreatedAt,
                     CustomerName = a.Customer.FullName
                 });
 
@@ -278,26 +284,8 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
             }
         }
 
-
     }
 
 
-    public class CreateAppointmentRequest
-    {
-        public DateTime AppointmentTime { get; set; }
-
-        public int Duration { get; set; }
-
-        public string PetSize { get; set; }
-        public string PetName { get; set; }
-    }
-
-    public class UpdateAppointmentRequest
-    {
-        public DateTime AppointmentTime { get; set; }
-        public int Duration { get; set; }
-        public string PetSize { get; set; }
-        public string PetName { get; set; }
-    }
 
 }

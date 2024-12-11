@@ -1,9 +1,9 @@
 using DogGroomingAPI.Models;
-using DogGroomingAPI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using DogGroomingAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +44,7 @@ builder.Services.AddControllers()
         // Avoid cycles in JSON serialization
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
+builder.Services.AddScoped<IAppointmentService, AppointmentService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -61,6 +62,8 @@ builder.Services.AddCors(options =>
 
 
 builder.Services.AddScoped<IAppointmentService, AppointmentService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<AppointmentValidationService>();
 
 var app = builder.Build();
 
