@@ -124,7 +124,6 @@ DogGroomingAPI/
 
    - Authentication
    - Registration
-   - Profile management
 
 3. **Database Context**:
    - Appointments table
@@ -137,24 +136,12 @@ DogGroomingAPI/
 - Password hashing with BCrypt
 - CORS policy configuration
 - Model validation
-- Error handling middleware
 
 ## Development Notes
 
-1. Business Hours:
+CORS Configuration:
 
-   - Monday to Friday
-   - 8:00 AM to 6:00 PM
-   - 30-minute appointment slots
-
-2. CORS Configuration:
-
-   - Configured for frontend at http://localhost:3000
-
-3. Error Handling:
-   - Global exception middleware
-   - Custom domain exceptions
-   - Validation responses
+- Configured for frontend at http://localhost:3000
 
 ## Environment Variables
 
