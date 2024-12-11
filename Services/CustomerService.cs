@@ -21,10 +21,6 @@ public class CustomerService : ICustomerService
         _configuration = configuration;
     }
 
-    public async Task<IEnumerable<Customer>> GetAllCustomersAsync()
-    {
-        return await _context.Customers.ToListAsync();
-    }
 
     public async Task<Customer> RegisterAsync(RegisterRequest request)
     {
@@ -76,22 +72,6 @@ public class CustomerService : ICustomerService
         return customer;
     }
 
-    public async Task<CurrentCustomerDto> GetCurrentCustomerAsync(int customerId)
-    {
-        var parameter = new SqlParameter("@CustomerId", customerId);
-
-        var result = await _context.Set<CurrentCustomerDto>()
-            .FromSqlRaw("EXEC [dbo].[GetCurrentCustomer] @CustomerId", parameter)
-            .AsNoTracking()
-            .FirstOrDefaultAsync();
-
-        if (result == null)
-        {
-            throw new NotFoundException($"Customer with ID {customerId} not found");
-        }
-
-        return result;
-    }
 
     private string GenerateJwtToken(Customer customer)
     {

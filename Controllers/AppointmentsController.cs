@@ -7,137 +7,90 @@ using Microsoft.Data.SqlClient;
 using DogGroomingAPI.Services;
 using System.ComponentModel.DataAnnotations;
 
-namespace DogGroomingAPI.Controllers // Replace with your actual namespace
+namespace DogGroomingAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class AppointmentsController : ControllerBase
     {
-        private readonly DogGroomingDbContext _context;
-        private const int MIN_APPOINTMENT_DURATION = 30;
-        private const int MAX_APPOINTMENT_DURATION = 90;
-        private const int BUSINESS_HOURS_START = 8;
-        private const int BUSINESS_HOURS_END = 18;
         private readonly IAppointmentService _appointmentService;
 
-        public AppointmentsController(DogGroomingDbContext context, IAppointmentService appointmentService)
+        public AppointmentsController(IAppointmentService appointmentService)
         {
-            _context = context;
             _appointmentService = appointmentService;
         }
 
-        [HttpPost]
-        [Route("create")]
+        [HttpPost("create")]
         [Authorize]
         public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { message = "User is not authenticated." });
-
-            var customerId = int.Parse(userId);
-            var customer = await _context.Customers.FindAsync(customerId);
-            if (customer == null)
-                return NotFound(new { message = "Customer not found." });
-
-            if (request.AppointmentTime.Hour < BUSINESS_HOURS_START || request.AppointmentTime.Hour >= BUSINESS_HOURS_END)
-                return BadRequest(new { message = "Appointments must be scheduled between 8 AM and 6 PM" });
-
-            if (request.Duration < MIN_APPOINTMENT_DURATION || request.Duration > MAX_APPOINTMENT_DURATION)
-                return BadRequest(new { message = "Appointment duration must be between 30 and 180 minutes" });
-
-            // Check for appointment conflicts
-            var isConflict = await _context.Appointments.AnyAsync(a =>
-                a.AppointmentTime < request.AppointmentTime.AddMinutes(request.Duration) &&
-                request.AppointmentTime < a.AppointmentTime.AddMinutes(a.GroomingDuration)
-            );
-
-            if (isConflict)
-                return BadRequest(new { message = "Appointment conflicts with an existing appointment." });
-
-
-            var appointment = new Appointment
+            try
             {
-                CustomerId = customer.Id,
-                AppointmentTime = request.AppointmentTime,
-                GroomingDuration = request.Duration,
-                PetSize = request.PetSize,
-                PetName = request.PetName,
-            };
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId))
+                    return Unauthorized("Not authenticated");
 
-            _context.Appointments.Add(appointment);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { appointment });
+                var customerId = int.Parse(userId);
+                var appt = await _appointmentService.CreateAppointmentAsync(request, customerId);
+                return Ok(new { appointment = appt });
+            }
+            catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                // Log error here
+                return StatusCode(500, "Failed to create appointment: " + ex.Message);
+            }
         }
-
 
         [Authorize]
         [HttpGet("available-times")]
         public async Task<IActionResult> GetAvailableTimes(DateTime date, int duration)
         {
-            if (duration < MIN_APPOINTMENT_DURATION || duration > MAX_APPOINTMENT_DURATION)
-                return BadRequest(new { message = "Duration must be between 30 and 90 minutes" });
-
-            if (date.Date < DateTime.Today)
-                return BadRequest(new { message = "Cannot check availability for past dates" });
-
-            var appointments = await _context.Appointments
-                .Where(a => a.AppointmentTime.Date == date.Date)
-                .OrderBy(a => a.AppointmentTime)
-                .ToListAsync();
-
-            var startOfDay = date.Date.AddHours(8); // Start at 8:00 AM
-            var endOfDay = date.Date.AddHours(18); // End at 6:00 PM
-            var availableTimes = new List<DateTime>();
-            var currentSlot = startOfDay;
-
-            while (currentSlot.AddMinutes(duration) <= endOfDay)
+            try
             {
-                bool isConflict = appointments.Any(a =>
-                    currentSlot < a.AppointmentTime.AddMinutes(a.GroomingDuration) &&
-                    currentSlot.AddMinutes(duration) > a.AppointmentTime
-                );
-
-                if (!isConflict)
-                {
-                    availableTimes.Add(currentSlot);
-                }
-
-                currentSlot = currentSlot.AddMinutes(15); // Increment by 15 minutes
+                var times = await _appointmentService.GetAvailableTimesAsync(date, duration);
+                return Ok(times);
             }
-
-            return Ok(availableTimes);
+            catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch
+            {
+                return StatusCode(500, "Error getting available times");
+            }
         }
 
         [HttpGet]
         [Authorize]
-        public async Task<ActionResult<IEnumerable<Appointment>>> GetAppointments([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        public async Task<ActionResult<IEnumerable<Appointment>>> GetAppointments(
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate)
         {
             try
             {
-                var appointments = await _appointmentService.GetAppointmentsAsync(fromDate, toDate);
+                var appts = await _appointmentService.GetAppointmentsAsync(fromDate, toDate);
 
-                var result = appointments.Select(a => new
+                return Ok(appts.Select(a => new
                 {
                     a.Id,
-                    a.AppointmentTime,
-                    a.GroomingDuration,
+                    Time = a.AppointmentTime,
+                    Duration = a.GroomingDuration,
                     a.PetSize,
                     a.PetName,
-                    a.CustomerId,
-                    a.CreatedAt,
-                    CustomerName = a.Customer.FullName
-                });
-
-                return Ok(result);
+                    Customer = a.Customer.FullName,
+                    a.CreatedAt
+                }));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred while retrieving appointments.", error = ex.Message });
+                return StatusCode(500, "Failed to get appointments: " + ex.Message);
             }
         }
 
@@ -148,99 +101,92 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
             try
             {
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userId))
-                {
+                if (userId == null)
                     return Unauthorized();
-                }
-                var userIdInt = int.Parse(userId);  // Parse string to int
 
-                var appointments = await _context.Appointments
-                    .Include(a => a.Customer)
-                    .Where(a => a.Customer.Id == userIdInt)
-                    .OrderBy(a => a.AppointmentTime)
-                    .ToListAsync();
+                var customerId = int.Parse(userId);
+                var myAppts = await _appointmentService.GetCustomerAppointmentsAsync(customerId);
 
-                var result = appointments.Select(a => new
+                return Ok(myAppts.Select(a => new
                 {
                     a.Id,
-                    a.AppointmentTime,
-                    a.GroomingDuration,
+                    Time = a.AppointmentTime,
+                    Duration = a.GroomingDuration,
                     a.PetSize,
                     a.PetName,
-                    a.CustomerId,
-                    a.CreatedAt,
-                    CustomerName = a.Customer.FullName
-                });
-
-                return Ok(result);
+                    Customer = a.Customer.FullName,
+                    a.CreatedAt
+                }));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred while retrieving your appointments.", error = ex.Message });
+                return StatusCode(500, "Error retrieving appointments: " + ex.Message);
             }
         }
 
-
-        [HttpDelete]
-        [Route("{appointmentId}")]
+        [HttpDelete("{appointmentId}")]
         [Authorize]
         public async Task<IActionResult> CancelAppointment(int appointmentId)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-            var customerId = int.Parse(userId);
+            try
+            {
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userId == null)
+                    return Unauthorized();
 
-            var appointment = await _context.Appointments.FindAsync(appointmentId);
-            if (appointment == null) return NotFound();
+                var customerId = int.Parse(userId);
+                var cancelled = await _appointmentService.CancelAppointmentAsync(appointmentId, customerId);
 
-            if (appointment.CustomerId != customerId)
+                if (!cancelled)
+                    return NotFound("Appointment not found");
+
+                return Ok();
+            }
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
-
-            _context.Appointments.Remove(appointment);
-            await _context.SaveChangesAsync();
-            return Ok();
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Failed to cancel: " + ex.Message);
+            }
         }
 
         [HttpPut("{appointmentId}")]
         [Authorize]
-        public async Task<IActionResult> UpdateAppointment(int appointmentId, [FromBody] UpdateAppointmentRequest request)
+        public async Task<IActionResult> UpdateAppointment(
+            int appointmentId,
+            [FromBody] UpdateAppointmentRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-            var customerId = int.Parse(userId);
+            try
+            {
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userId == null)
+                    return Unauthorized();
 
-            var existingAppointment = await _context.Appointments.FindAsync(appointmentId);
-            if (existingAppointment == null) return NotFound();
-
-            if (existingAppointment.CustomerId != customerId)
+                var customerId = int.Parse(userId);
+                var updated = await _appointmentService.UpdateAppointmentAsync(appointmentId, request, customerId);
+                return Ok(updated);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound("Appointment not found");
+            }
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
-
-            // Check for appointment conflicts
-            var isConflict = await _context.Appointments
-                .Where(a => a.Id != appointmentId)
-                .AnyAsync(a =>
-                    a.AppointmentTime < request.AppointmentTime.AddMinutes(request.Duration) &&
-                    request.AppointmentTime < a.AppointmentTime.AddMinutes(a.GroomingDuration)
-                );
-
-            if (isConflict)
-                return BadRequest(new { message = "Appointment conflicts with an existing appointment." });
-
-            // Update appointment properties
-            existingAppointment.AppointmentTime = request.AppointmentTime;
-            existingAppointment.GroomingDuration = request.Duration;
-            existingAppointment.PetSize = request.PetSize;
-            existingAppointment.PetName = request.PetName;
-
-            await _context.SaveChangesAsync();
-            return Ok(existingAppointment);
+            catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Update failed: " + ex.Message);
+            }
         }
 
         [HttpGet("{id}")]
@@ -250,42 +196,35 @@ namespace DogGroomingAPI.Controllers // Replace with your actual namespace
             try
             {
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+                if (userId == null)
+                    return Unauthorized();
+
                 var customerId = int.Parse(userId);
+                var appt = await _appointmentService.GetAppointmentByIdAsync(id, customerId);
 
-                var appointment = await _context.Appointments
-                    .Include(a => a.Customer)
-                    .FirstOrDefaultAsync(a => a.Id == id);
-
-                if (appointment == null) return NotFound();
-
-                if (appointment.CustomerId != customerId)
+                return Ok(new
                 {
-                    return Forbid();
-                }
-
-                var result = new
-                {
-                    appointment.Id,
-                    appointment.AppointmentTime,
-                    appointment.GroomingDuration,
-                    appointment.PetSize,
-                    appointment.PetName,
-                    appointment.CustomerId,
-                    appointment.CreatedAt,
-                    CustomerName = appointment.Customer.FullName
-                };
-
-                return Ok(result);
+                    appt.Id,
+                    Time = appt.AppointmentTime,
+                    Duration = appt.GroomingDuration,
+                    appt.PetSize,
+                    appt.PetName,
+                    Customer = appt.Customer.FullName,
+                    appt.CreatedAt
+                });
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound("Appointment not found");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred while retrieving the appointment.", error = ex.Message });
+                return StatusCode(500, "Error retrieving appointment: " + ex.Message);
             }
         }
-
     }
-
-
-
 }

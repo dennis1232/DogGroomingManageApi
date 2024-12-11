@@ -25,13 +25,6 @@ namespace DogGroomingAPI.Controllers
             _customerService = customerService;
         }
 
-        [Authorize(Roles = "Admin")]
-        [HttpGet]
-        public async Task<IActionResult> GetCustomers()
-        {
-            var customers = await _customerService.GetAllCustomersAsync();
-            return Ok(customers);
-        }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
