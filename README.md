@@ -43,7 +43,7 @@ A .NET Core Web API for managing a dog grooming business, handling appointments,
 1. Clone the repository:
 
 ```bash
-git clone [repository-url]
+git clone https://github.com/dennis1232/DogGroomingManageApi.git
 cd DogGroomingAPI
 ```
 
