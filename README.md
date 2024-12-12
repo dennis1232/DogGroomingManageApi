@@ -94,12 +94,10 @@ dotnet run
 The API will be available at:
 
 - HTTP: http://localhost:5035
-- HTTPS: https://localhost:7099
 
 Swagger documentation:
 
 - http://localhost:5035/swagger
-- https://localhost:7099/swagger
 
 ## Project Structure
 
