@@ -138,7 +138,7 @@ namespace DogGroomingAPI.Services
                 {
                     availableTimes.Add(currentTime);
                 }
-                currentTime = currentTime.AddMinutes(30); // 30-minute intervals
+                currentTime = currentTime.AddMinutes(30);
             }
 
             return availableTimes;

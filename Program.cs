@@ -7,7 +7,6 @@ using DogGroomingAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// JWT Configuration
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrEmpty(jwtKey))
 {
@@ -25,15 +24,14 @@ builder.Services.AddAuthentication(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidateIssuer = false, // Set to true if you define Issuer
-        ValidateAudience = false, // Set to true if you define Audience
+        ValidateIssuer = false,
+        ValidateAudience = false,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
 });
 
-// Add DbContext for SQL Server
 builder.Services.AddDbContext<DogGroomingDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.")));
 
@@ -49,12 +47,11 @@ builder.Services.AddScoped<IAppointmentService, AppointmentService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configure CORS for frontend
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:3000") // React app URL
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -76,7 +73,7 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseHttpsRedirection(); // Enable HTTPS redirection in production
+    app.UseHttpsRedirection();
 }
 
 app.UseCors("AllowReactApp");
