@@ -21,7 +21,9 @@ namespace DogGroomingAPI.Services
             => duration >= MIN_APPOINTMENT_DURATION && duration <= MAX_APPOINTMENT_DURATION;
 
         public bool IsValidBusinessHour(DateTime appointmentTime)
-            => appointmentTime.Hour >= BUSINESS_HOURS_START && appointmentTime.Hour < BUSINESS_HOURS_END;
+        {
+            return appointmentTime.Hour >= BUSINESS_HOURS_START && appointmentTime.Hour < BUSINESS_HOURS_END;
+        }
 
         public async Task<bool> HasConflict(DateTime appointmentTime, int duration, int? excludeAppointmentId = null)
         {
@@ -30,9 +32,12 @@ namespace DogGroomingAPI.Services
             if (excludeAppointmentId.HasValue)
                 query = query.Where(a => a.Id != excludeAppointmentId.Value);
 
+            var startTime = appointmentTime.ToUniversalTime();
+            var endTime = startTime.AddMinutes(duration);
+
             return await query.AnyAsync(a =>
-                a.AppointmentTime < appointmentTime.AddMinutes(duration) &&
-                appointmentTime < a.AppointmentTime.AddMinutes(a.GroomingDuration)
+                (startTime >= a.AppointmentTime && startTime < a.AppointmentTime.AddMinutes(a.GroomingDuration)) ||
+                (endTime > a.AppointmentTime && startTime < a.AppointmentTime.AddMinutes(a.GroomingDuration))
             );
         }
     }

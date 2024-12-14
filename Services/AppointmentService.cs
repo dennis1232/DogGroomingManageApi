@@ -59,19 +59,22 @@ namespace DogGroomingAPI.Services
 
         public async Task<Appointment> CreateAppointment(CreateAppointmentRequest request, int customerId)
         {
+            var israelTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Israel Standard Time");
+            var israelAppointmentTime = TimeZoneInfo.ConvertTimeFromUtc(request.AppointmentTime.ToUniversalTime(), israelTimeZone);
+
             if (!_validationService.IsValidDuration(request.Duration))
                 throw new ValidationException("Invalid appointment duration");
 
-            if (!_validationService.IsValidBusinessHour(request.AppointmentTime))
+            if (!_validationService.IsValidBusinessHour(israelAppointmentTime))
                 throw new ValidationException("Invalid business hour");
 
-            if (await _validationService.HasConflict(request.AppointmentTime, request.Duration))
+            if (await _validationService.HasConflict(israelAppointmentTime, request.Duration))
                 throw new ValidationException("Appointment conflicts with existing appointment");
 
             var appointment = new Appointment
             {
                 CustomerId = customerId,
-                AppointmentTime = request.AppointmentTime,
+                AppointmentTime = request.AppointmentTime.ToUniversalTime(), // Store in UTC
                 GroomingDuration = request.Duration,
                 PetSize = request.PetSize,
                 PetName = request.PetName,
@@ -119,24 +122,37 @@ namespace DogGroomingAPI.Services
             return appointment;
         }
 
+
+
         public async Task<IEnumerable<DateTime>> GetAvailableTimes(DateTime date, int duration)
         {
-            var businessStart = new DateTime(date.Year, date.Month, date.Day, BUSINESS_HOURS_START, 0, 0);
-            var businessEnd = new DateTime(date.Year, date.Month, date.Day, BUSINESS_HOURS_END, 0, 0);
+            if (!_validationService.IsValidDuration(duration))
+                throw new ValidationException("Invalid duration");
+
+            // Convert input date to Israel timezone
+            var israelTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Israel Standard Time");
+            var israelDate = TimeZoneInfo.ConvertTimeFromUtc(date.ToUniversalTime(), israelTimeZone);
+
+            var businessStart = new DateTime(israelDate.Year, israelDate.Month, israelDate.Day, BUSINESS_HOURS_START, 0, 0);
+            var businessEnd = new DateTime(israelDate.Year, israelDate.Month, israelDate.Day, BUSINESS_HOURS_END, 0, 0);
             var availableTimes = new List<DateTime>();
 
-            var existingAppointments = await _context.Appointments
-                .Where(a => a.AppointmentTime.Date == date.Date)
-                .OrderBy(a => a.AppointmentTime)
-                .ToListAsync();
-
             var currentTime = businessStart;
+            var nowInIsrael = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, israelTimeZone);
+
             while (currentTime.AddMinutes(duration) <= businessEnd)
             {
-                var hasConflict = await _validationService.HasConflict(currentTime, duration);
-                if (!hasConflict)
+                if (israelDate.Date == nowInIsrael.Date && currentTime <= nowInIsrael)
                 {
-                    availableTimes.Add(currentTime);
+                    currentTime = currentTime.AddMinutes(30);
+                    continue;
+                }
+
+                if (!await _validationService.HasConflict(currentTime, duration))
+                {
+                    // Convert back to UTC before sending to client
+                    var utcTime = TimeZoneInfo.ConvertTimeToUtc(currentTime, israelTimeZone);
+                    availableTimes.Add(utcTime);
                 }
                 currentTime = currentTime.AddMinutes(30);
             }
@@ -150,7 +166,7 @@ namespace DogGroomingAPI.Services
             {
                 Id = appointment.Id,
                 CustomerId = appointment.CustomerId,
-                CustomerName = appointment.Customer?.FullName,
+                CustomerName = appointment.Customer?.FullName ?? "N/A",
                 PetName = appointment.PetName,
                 PetSize = appointment.PetSize,
                 AppointmentTime = appointment.AppointmentTime,
